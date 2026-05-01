@@ -1,0 +1,45 @@
+[project]
+name = "motion-bg-studio"
+version = "0.1.0"
+description = "Motion Background Studio - desktop app to generate seamless looping motion backgrounds (4K/HD MP4) for microstock"
+readme = "README.md"
+authors = [
+    { name = "Motion BG Studio Contributors" }
+]
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["motion-background", "video", "microstock", "ffmpeg", "generative", "loop", "qt", "desktop"]
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "PySide6>=6.6",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5",
+    "pytest>=8.0",
+    "pyinstaller>=6.6",
+]
+
+[project.scripts]
+motion-bg = "motion_bg_studio.cli:main"
+
+[project.gui-scripts]
+motion-bg-studio = "motion_bg_studio.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/motion_bg_studio"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
