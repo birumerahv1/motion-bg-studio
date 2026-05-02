@@ -56,22 +56,21 @@ jobs:
           if (-not (Test-Path $exe)) { throw "exe not produced" }
           Write-Host "Built executable size:" (Get-Item $exe).Length
 
-      - name: Package zip
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}".Replace('/', '-')
-          if ([string]::IsNullOrEmpty($version)) { $version = "dev" }
-          $zip = "motion-bg-studio-windows-x64-$version.zip"
-          Compress-Archive -Path dist\motion-bg-studio\* -DestinationPath $zip
-          echo "ZIP_NAME=$zip" >> $env:GITHUB_ENV
-          Get-ChildItem $zip
-
-      - name: Upload artifact
+      - name: Upload artifact (folder contents, no extra zip wrapper)
         uses: actions/upload-artifact@v4
         with:
           name: motion-bg-studio-windows-x64
-          path: ${{ env.ZIP_NAME }}
+          path: dist/motion-bg-studio/
           if-no-files-found: error
+
+      - name: Package zip for GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".Replace('/', '-')
+          $zip = "motion-bg-studio-windows-x64-$version.zip"
+          Compress-Archive -Path dist\motion-bg-studio\* -DestinationPath $zip
+          echo "ZIP_NAME=$zip" >> $env:GITHUB_ENV
 
       - name: Attach to GitHub release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
