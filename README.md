@@ -15,6 +15,13 @@ Standalone Windows desktop app with a live preview, six built-in styles, curated
 
 All styles loop seamlessly: every animation parameter completes an integer number of cycles in the loop duration, and noise is sampled along a closed path through noise-space.
 
+## Output settings
+
+- **Resolutions:** Full HD 1920×1080, QHD 2560×1440, 4K UHD 3840×2160, DCI 4K 4096×2160, Square 4K 2160×2160, Vertical 4K 2160×3840.
+- **Durations:** 5 / 10 / 15 / 20 / 30 seconds (configurable to anything via the CLI).
+- **FPS:** the GUI ships presets 24 / 25 / 30 / 50 / 60 in the dropdown, but the field is editable — type any integer 1–999 to enter a custom frame rate (e.g. 90 for high-refresh, 120 for slow-motion source).
+- **Codec:** H.264, yuv420p, configurable CRF and `libx264` preset.
+
 ## Quick start (developers)
 
 ```bash

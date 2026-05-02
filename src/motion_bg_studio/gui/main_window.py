@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QIntValidator, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -132,6 +132,13 @@ class MainWindow(QMainWindow):
         of.addRow("Duration:", self.duration_cb)
 
         self.fps_cb = QComboBox()
+        self.fps_cb.setEditable(True)
+        self.fps_cb.setInsertPolicy(QComboBox.NoInsert)
+        self.fps_cb.lineEdit().setValidator(QIntValidator(1, 999, self))
+        self.fps_cb.setToolTip(
+            "Pick a preset or type any integer (1\u2013999). Common picks: "
+            "24 cinematic, 30 web, 60 smooth, 120 slow-mo source."
+        )
         for f in FPS_PRESETS:
             self.fps_cb.addItem(f"{f}", f)
         self.fps_cb.setCurrentIndex(FPS_PRESETS.index(30))
@@ -238,11 +245,29 @@ class MainWindow(QMainWindow):
             width=w_,
             height=h_,
             duration=float(self.duration_cb.currentData()),
-            fps=int(self.fps_cb.currentData()),
+            fps=self._current_fps(),
             seed=int(self.seed_sb.value()),
             crf=int(self.crf_sb.value()),
             preset=self.preset_cb.currentText(),
         )
+
+    def _current_fps(self) -> int:
+        """Return current FPS from the editable combo.
+
+        For editable combos the source of truth is the line edit text, since
+        ``currentData()`` keeps pointing at the last-selected preset even when
+        the user typed something different. Falls back to the preset data,
+        then to 30, on invalid input.
+        """
+        text = self.fps_cb.currentText().strip()
+        try:
+            value = int(text)
+        except (TypeError, ValueError):
+            value = 0
+        if value <= 0:
+            data = self.fps_cb.currentData()
+            return data if isinstance(data, int) and data > 0 else 30
+        return value
 
     def _refresh_preview(self) -> None:
         self.preview.set_job(self._current_job())
