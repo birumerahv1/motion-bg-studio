@@ -40,14 +40,20 @@ def list_palettes_cmd() -> None:
 @click.option("--seed", default=None, type=int)
 @click.option("--crf", default=18, type=int, show_default=True)
 @click.option("--preset", default="medium", show_default=True)
+@click.option("--encoder", default="auto", show_default=True,
+              type=click.Choice(["auto", "cpu", "gpu", "libx264", "h264_nvenc", "h264_qsv", "h264_amf"], case_sensitive=False),
+              help="Video encoder. 'auto' uses GPU if available else CPU.")
+@click.option("--workers", default=0, type=int, show_default=True,
+              help="Frame-generation worker processes. 0=auto (cpu_count-1), 1=serial.")
 @click.option("-o", "--output", default="out.mp4", type=click.Path(dir_okay=False, path_type=Path))
-def render_cmd(style, palette, width, height, duration, fps, seed, crf, preset, output) -> None:
+def render_cmd(style, palette, width, height, duration, fps, seed, crf, preset, encoder, workers, output) -> None:
     """Render a single motion-background MP4."""
     job = RenderJob(
         style=style, palette=palette,
         width=width, height=height,
         duration=duration, fps=fps,
         seed=seed, crf=crf, preset=preset,
+        encoder=encoder, workers=workers,
         output=output,
     )
 
@@ -75,8 +81,11 @@ def render_cmd(style, palette, width, height, duration, fps, seed, crf, preset, 
 @click.option("--seed-start", default=1, type=int)
 @click.option("--crf", default=18, type=int)
 @click.option("--preset", default="medium")
+@click.option("--encoder", default="auto", show_default=True,
+              type=click.Choice(["auto", "cpu", "gpu", "libx264", "h264_nvenc", "h264_qsv", "h264_amf"], case_sensitive=False))
+@click.option("--workers", default=0, type=int, show_default=True)
 @click.option("-d", "--out-dir", default="renders", type=click.Path(file_okay=False, path_type=Path))
-def batch_cmd(style, palette, count, width, height, duration, fps, seed_start, crf, preset, out_dir) -> None:
+def batch_cmd(style, palette, count, width, height, duration, fps, seed_start, crf, preset, encoder, workers, out_dir) -> None:
     """Render many variations into a folder."""
     out_dir.mkdir(parents=True, exist_ok=True)
     palettes = [palette] if palette else list_palettes()
@@ -89,6 +98,7 @@ def batch_cmd(style, palette, count, width, height, duration, fps, seed_start, c
             width=width, height=height,
             duration=duration, fps=fps,
             seed=seed, crf=crf, preset=preset,
+            encoder=encoder, workers=workers,
             output=out_dir / f"{style}_{pal}_seed{seed}_{width}x{height}.mp4",
         )
 

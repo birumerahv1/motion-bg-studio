@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QIntValidator, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -132,6 +132,13 @@ class MainWindow(QMainWindow):
         of.addRow("Duration:", self.duration_cb)
 
         self.fps_cb = QComboBox()
+        self.fps_cb.setEditable(True)
+        self.fps_cb.setInsertPolicy(QComboBox.NoInsert)
+        self.fps_cb.lineEdit().setValidator(QIntValidator(1, 999, self))
+        self.fps_cb.setToolTip(
+            "Pick a preset or type any integer (1\u2013999). Common picks: "
+            "24 cinematic, 30 web, 60 smooth, 120 slow-mo source."
+        )
         for f in FPS_PRESETS:
             self.fps_cb.addItem(f"{f}", f)
         self.fps_cb.setCurrentIndex(FPS_PRESETS.index(30))
@@ -148,6 +155,33 @@ class MainWindow(QMainWindow):
             self.preset_cb.addItem(p)
         self.preset_cb.setCurrentText("medium")
         of.addRow("Encoding preset:", self.preset_cb)
+
+        # Hardware encoder + multiprocessing — the two biggest perf wins on
+        # consumer hardware. Probe NVENC / QSV / AMF lazily on first paint so
+        # the launch is not blocked by a 5–15s ffmpeg subprocess.
+        self.encoder_cb = QComboBox()
+        self.encoder_cb.addItem("Auto (GPU if available)", "auto")
+        self.encoder_cb.addItem("GPU — NVENC / QSV / AMF", "gpu")
+        self.encoder_cb.addItem("CPU — libx264", "cpu")
+        self.encoder_cb.setCurrentIndex(0)
+        self.encoder_cb.setToolTip(
+            "GPU encoding via your graphics card (NVIDIA NVENC, Intel QSV, AMD AMF) is\n"
+            "typically 3\u20136\u00d7 faster than CPU and frees the CPU for frame generation.\n"
+            "'Auto' falls back to CPU when no GPU encoder is detected."
+        )
+        of.addRow("Encoder:", self.encoder_cb)
+
+        self.workers_cb = QComboBox()
+        self.workers_cb.addItem("Auto (use most CPU cores)", 0)
+        for w_count in (1, 2, 3, 4, 6, 8):
+            label = "1 (serial, no multiprocessing)" if w_count == 1 else f"{w_count} workers"
+            self.workers_cb.addItem(label, w_count)
+        self.workers_cb.setCurrentIndex(0)
+        self.workers_cb.setToolTip(
+            "Render frames in parallel across CPU cores. 'Auto' picks (cores - 1).\n"
+            "Use 1 if multiprocessing fights with another heavy process or your machine has only 1\u20132 cores."
+        )
+        of.addRow("Workers:", self.workers_cb)
         layout.addWidget(gb_out)
 
         gb_seed = QGroupBox("Seed")
@@ -238,11 +272,31 @@ class MainWindow(QMainWindow):
             width=w_,
             height=h_,
             duration=float(self.duration_cb.currentData()),
-            fps=int(self.fps_cb.currentData()),
+            fps=self._current_fps(),
             seed=int(self.seed_sb.value()),
             crf=int(self.crf_sb.value()),
             preset=self.preset_cb.currentText(),
+            encoder=self.encoder_cb.currentData() or "auto",
+            workers=int(self.workers_cb.currentData() or 0),
         )
+
+    def _current_fps(self) -> int:
+        """Return current FPS from the editable combo.
+
+        For editable combos the source of truth is the line edit text, since
+        ``currentData()`` keeps pointing at the last-selected preset even when
+        the user typed something different. Falls back to the preset data,
+        then to 30, on invalid input.
+        """
+        text = self.fps_cb.currentText().strip()
+        try:
+            value = int(text)
+        except (TypeError, ValueError):
+            value = 0
+        if value <= 0:
+            data = self.fps_cb.currentData()
+            return data if isinstance(data, int) and data > 0 else 30
+        return value
 
     def _refresh_preview(self) -> None:
         self.preview.set_job(self._current_job())
