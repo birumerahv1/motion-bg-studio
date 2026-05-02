@@ -9,9 +9,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+try:
+    from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from motion_bg_studio.gui.main_window import MainWindow  # noqa: E402
+    from motion_bg_studio.gui.main_window import MainWindow  # noqa: E402
+except ImportError as exc:
+    pytest.skip(f"Qt runtime libs not available: {exc}", allow_module_level=True)
 
 
 @pytest.fixture(scope="module")
