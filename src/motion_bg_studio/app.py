@@ -5,7 +5,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from .gui.main_window import MainWindow
+from motion_bg_studio.gui.main_window import MainWindow
 
 
 def main() -> int:
