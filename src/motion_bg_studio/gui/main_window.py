@@ -155,6 +155,33 @@ class MainWindow(QMainWindow):
             self.preset_cb.addItem(p)
         self.preset_cb.setCurrentText("medium")
         of.addRow("Encoding preset:", self.preset_cb)
+
+        # Hardware encoder + multiprocessing — the two biggest perf wins on
+        # consumer hardware. Probe NVENC / QSV / AMF lazily on first paint so
+        # the launch is not blocked by a 5–15s ffmpeg subprocess.
+        self.encoder_cb = QComboBox()
+        self.encoder_cb.addItem("Auto (GPU if available)", "auto")
+        self.encoder_cb.addItem("GPU — NVENC / QSV / AMF", "gpu")
+        self.encoder_cb.addItem("CPU — libx264", "cpu")
+        self.encoder_cb.setCurrentIndex(0)
+        self.encoder_cb.setToolTip(
+            "GPU encoding via your graphics card (NVIDIA NVENC, Intel QSV, AMD AMF) is\n"
+            "typically 3\u20136\u00d7 faster than CPU and frees the CPU for frame generation.\n"
+            "'Auto' falls back to CPU when no GPU encoder is detected."
+        )
+        of.addRow("Encoder:", self.encoder_cb)
+
+        self.workers_cb = QComboBox()
+        self.workers_cb.addItem("Auto (use most CPU cores)", 0)
+        for w_count in (1, 2, 3, 4, 6, 8):
+            label = "1 (serial, no multiprocessing)" if w_count == 1 else f"{w_count} workers"
+            self.workers_cb.addItem(label, w_count)
+        self.workers_cb.setCurrentIndex(0)
+        self.workers_cb.setToolTip(
+            "Render frames in parallel across CPU cores. 'Auto' picks (cores - 1).\n"
+            "Use 1 if multiprocessing fights with another heavy process or your machine has only 1\u20132 cores."
+        )
+        of.addRow("Workers:", self.workers_cb)
         layout.addWidget(gb_out)
 
         gb_seed = QGroupBox("Seed")
@@ -249,6 +276,8 @@ class MainWindow(QMainWindow):
             seed=int(self.seed_sb.value()),
             crf=int(self.crf_sb.value()),
             preset=self.preset_cb.currentText(),
+            encoder=self.encoder_cb.currentData() or "auto",
+            workers=int(self.workers_cb.currentData() or 0),
         )
 
     def _current_fps(self) -> int:

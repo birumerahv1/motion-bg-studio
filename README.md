@@ -22,6 +22,23 @@ All styles loop seamlessly: every animation parameter completes an integer numbe
 - **FPS:** the GUI ships presets 24 / 25 / 30 / 50 / 60 in the dropdown, but the field is editable — type any integer 1–999 to enter a custom frame rate (e.g. 90 for high-refresh, 120 for slow-motion source).
 - **Codec:** H.264, yuv420p, configurable CRF and `libx264` preset.
 
+## Performance
+
+The two main render-time levers are exposed in the GUI's *Output* group and the
+CLI:
+
+- **Encoder:** `Auto` (default) probes for a hardware H.264 encoder
+  (NVIDIA NVENC, Intel Quick Sync / `h264_qsv`, AMD `h264_amf`) and uses it
+  when available — typically 3–6× faster than CPU H.264 and frees the CPU for
+  frame generation. `CPU` forces software `libx264`. `GPU` forces hardware and
+  falls back to CPU silently if no GPU encoder is detected. CLI flag:
+  `--encoder auto|cpu|gpu|h264_nvenc|h264_qsv|h264_amf`.
+- **Workers:** `Auto` (default) runs `cpu_count - 1` worker processes that
+  generate frames in parallel; `1` forces single-threaded (matches the legacy
+  behaviour). On a 4-core CPU the parallel path roughly halves frame-generation
+  time at 1080p and quarters it at 4K. CLI flag: `--workers 0|1|2|3|4|…`
+  (`0` = auto).
+
 ## Quick start (developers)
 
 ```bash
