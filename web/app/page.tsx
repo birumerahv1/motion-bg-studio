@@ -84,12 +84,15 @@ export default function Page() {
 
   const pollItem = useCallback(
     async (itemId: string) => {
-      const startedAt = Date.now();
       const POLL_INTERVAL = 4000;
-      const MAX_DURATION = 12 * 60 * 1000; // 12 minutes
-      while (Date.now() - startedAt < MAX_DURATION) {
+      // Poll until Freepik itself reports COMPLETED or FAILED, the user deletes
+      // the card, or the user clicks Stop (which sets status to FAILED). There
+      // is no client-side timeout — generation lifetime depends only on the
+      // upstream task / API key.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
         const current = galleryRef.current.find((g) => g.id === itemId);
-        if (!current) return; // deleted
+        if (!current) return; // deleted by user
         if (current.status === "COMPLETED" || current.status === "FAILED") return;
 
         try {
@@ -104,7 +107,7 @@ export default function Page() {
           });
           const json = await res.json();
           if (!res.ok || !json.ok) {
-            // Don't permanently fail on transient errors; wait and retry.
+            // Transient error — keep polling.
             await wait(POLL_INTERVAL);
             continue;
           }
@@ -120,17 +123,9 @@ export default function Page() {
           }
           updateItem(itemId, { status });
         } catch {
-          // ignore and retry
+          // network blip — keep polling.
         }
         await wait(POLL_INTERVAL);
-      }
-      // Timeout fallback
-      const final = galleryRef.current.find((g) => g.id === itemId);
-      if (final && final.status !== "COMPLETED" && final.status !== "FAILED") {
-        updateItem(itemId, {
-          status: "FAILED",
-          errorMessage: "Polling timed out after 12 minutes. Use the refresh icon to try again.",
-        });
       }
     },
     [enabledKeys, updateItem],
@@ -232,6 +227,12 @@ export default function Page() {
     },
     [pollItem],
   );
+  const onStop = useCallback(
+    (id: string) => {
+      updateItem(id, { status: "FAILED", errorMessage: "Stopped by user" });
+    },
+    [updateItem],
+  );
   const onClearAll = useCallback(() => setGallery([]), []);
 
   const canSubmit = useMemo(() => {
@@ -293,6 +294,7 @@ export default function Page() {
             items={gallery}
             onDelete={onDelete}
             onRetryPoll={onRetryPoll}
+            onStop={onStop}
             onClearAll={onClearAll}
           />
         </section>

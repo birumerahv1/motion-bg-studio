@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Trash2, RefreshCcw, ImageOff, FilmIcon, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { Download, Trash2, RefreshCcw, ImageOff, FilmIcon, Clock, AlertTriangle, Loader2, Square } from "lucide-react";
 import clsx from "clsx";
 import type { GalleryItem } from "@/lib/types";
 import { getModel } from "@/lib/models";
@@ -35,11 +35,13 @@ export function Gallery({
   items,
   onDelete,
   onRetryPoll,
+  onStop,
   onClearAll,
 }: {
   items: GalleryItem[];
   onDelete: (id: string) => void;
   onRetryPoll: (id: string) => void;
+  onStop: (id: string) => void;
   onClearAll: () => void;
 }) {
   return (
@@ -78,6 +80,7 @@ export function Gallery({
               item={item}
               onDelete={onDelete}
               onRetryPoll={onRetryPoll}
+              onStop={onStop}
             />
           ))}
         </div>
@@ -90,10 +93,12 @@ function GalleryCard({
   item,
   onDelete,
   onRetryPoll,
+  onStop,
 }: {
   item: GalleryItem;
   onDelete: (id: string) => void;
   onRetryPoll: (id: string) => void;
+  onStop: (id: string) => void;
 }) {
   const model = getModel(item.modelId);
   const isPending = item.status === "CREATED" || item.status === "IN_PROGRESS" || item.status === "QUEUED";
@@ -161,13 +166,22 @@ function GalleryCard({
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <div className="flex items-center gap-1">
             {isPending && (
-              <button
-                className="btn-ghost !p-1.5 text-white/60 hover:text-white"
-                title="Refresh status"
-                onClick={() => onRetryPoll(item.id)}
-              >
-                <RefreshCcw size={14} />
-              </button>
+              <>
+                <button
+                  className="btn-ghost !p-1.5 text-white/60 hover:text-white"
+                  title="Refresh status"
+                  onClick={() => onRetryPoll(item.id)}
+                >
+                  <RefreshCcw size={14} />
+                </button>
+                <button
+                  className="btn-ghost !p-1.5 text-amber-300/80 hover:text-amber-200 hover:!bg-amber-500/10"
+                  title="Stop generation"
+                  onClick={() => onStop(item.id)}
+                >
+                  <Square size={14} />
+                </button>
+              </>
             )}
             <button
               className="btn-ghost !p-1.5 text-white/50 hover:text-red-300"
