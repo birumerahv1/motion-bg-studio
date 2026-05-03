@@ -34,6 +34,10 @@ export default function Page() {
   const [keysOpen, setKeysOpen] = useState(false);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [busy, setBusy] = useState(false);
+  // Guard so the save effects don't overwrite localStorage with the empty
+  // initial state before the load effect has run (which is especially nasty
+  // under React.StrictMode, where every effect fires twice on mount).
+  const [hydrated, setHydrated] = useState(false);
 
   const galleryRef = useRef<GalleryItem[]>([]);
   galleryRef.current = gallery;
@@ -44,16 +48,19 @@ export default function Page() {
     setKeys(k);
     const g = loadGallery();
     setGallery(g);
+    setHydrated(true);
     if (k.length === 0) setKeysOpen(true);
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     saveApiKeys(keys);
-  }, [keys]);
+  }, [keys, hydrated]);
 
   useEffect(() => {
+    if (!hydrated) return;
     saveGallery(gallery);
-  }, [gallery]);
+  }, [gallery, hydrated]);
 
   // When mode changes, reset to first model in that mode and clear ephemeral fields.
   useEffect(() => {
@@ -207,15 +214,18 @@ export default function Page() {
     }
   }, [currentModel, enabledKeys, mode, modelId, values, updateItem, pollItem]);
 
-  // Resume polling for any pending items on mount (e.g. after a page reload).
+  // Resume polling for any pending items once we've hydrated from localStorage.
+  const resumedRef = useRef(false);
   useEffect(() => {
+    if (!hydrated || resumedRef.current) return;
+    resumedRef.current = true;
     const pending = gallery.filter(
       (g) => (g.status === "CREATED" || g.status === "IN_PROGRESS") && g.taskId,
     );
     pending.forEach((p) => pollItem(p.id));
-    // We intentionally only run this on mount.
+    // We intentionally only resume once, right after hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hydrated]);
 
   // -------- gallery actions --------
   const onDelete = useCallback((id: string) => {
