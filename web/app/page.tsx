@@ -44,6 +44,20 @@ export default function Page() {
 
   // -------- hydrate from localStorage --------
   useEffect(() => {
+    // If the page was navigated to with basic-auth credentials in the URL
+    // (e.g. https://user:pass@host/) the Fetch spec forbids constructing
+    // a Request from a URL containing credentials, so any relative
+    // `fetch("/api/...")` call would throw. Strip them from the address bar
+    // on first mount so that relative URLs resolve cleanly. The browser
+    // already cached the auth header from the initial navigation.
+    if (typeof window !== "undefined") {
+      const u = new URL(window.location.href);
+      if (u.username || u.password) {
+        u.username = "";
+        u.password = "";
+        window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+      }
+    }
     const k = loadApiKeys();
     setKeys(k);
     const g = loadGallery();
