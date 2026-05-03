@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { Sparkles, Wand2 } from "lucide-react";
 import type { ModelDescriptor } from "@/lib/models";
+import { FileUrlInput } from "./FileUrlInput";
 
 export interface PromptValues {
   prompt: string;
@@ -147,26 +148,26 @@ export function PromptPanel({
       {model.supports.startImage && (
         <div>
           <label className="label">
-            {model.mode === "motion-control" ? "Character image URL" : "Start frame image URL"}{" "}
+            {model.mode === "motion-control" ? "Character image" : "Start frame image"}{" "}
             <span className="text-red-400">*</span>
           </label>
-          <input
-            className="input"
-            placeholder="https://… (publicly reachable image URL)"
+          <FileUrlInput
+            kind="image"
             value={values.startImageUrl}
-            onChange={(e) => set("startImageUrl", e.target.value)}
+            onChange={(v) => set("startImageUrl", v)}
+            placeholder="https://… or click Upload"
           />
         </div>
       )}
 
       {model.supports.endImage && (
         <div>
-          <label className="label">End frame image URL (optional)</label>
-          <input
-            className="input"
-            placeholder="https://…"
+          <label className="label">End frame image (optional)</label>
+          <FileUrlInput
+            kind="image"
             value={values.endImageUrl}
-            onChange={(e) => set("endImageUrl", e.target.value)}
+            onChange={(v) => set("endImageUrl", v)}
+            placeholder="https://… or click Upload"
           />
         </div>
       )}
@@ -174,13 +175,14 @@ export function PromptPanel({
       {model.supports.referenceVideo && (
         <div>
           <label className="label">
-            Reference motion video URL <span className="text-red-400">*</span>
+            Reference motion video <span className="text-red-400">*</span>
           </label>
-          <input
-            className="input"
-            placeholder="https://… (mp4/webm publicly reachable URL)"
+          <FileUrlInput
+            kind="video"
             value={values.referenceVideoUrl}
-            onChange={(e) => set("referenceVideoUrl", e.target.value)}
+            onChange={(v) => set("referenceVideoUrl", v)}
+            placeholder="https://… (mp4/mov, 3-30s)"
+            warnBase64
           />
         </div>
       )}

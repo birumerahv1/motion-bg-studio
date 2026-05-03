@@ -188,18 +188,20 @@ export function buildPostBody(
   }
 
   // Motion control - Kling 2.6 std/pro
+  // Endpoint requires `image_url` (character) and `video_url` (motion source).
   if (model.id === "kling-v2-6-motion-control-pro" || model.id === "kling-v2-6-motion-control-std") {
     if (payload.startImageUrl) body.image_url = payload.startImageUrl;
-    if (payload.referenceVideoUrl) body.reference_video_url = payload.referenceVideoUrl;
+    if (payload.referenceVideoUrl) body.video_url = payload.referenceVideoUrl;
     if (payload.prompt) body.prompt = payload.prompt;
     if (payload.negativePrompt) body.negative_prompt = payload.negativePrompt;
     return body;
   }
 
-  // Kling 3 Omni Pro (reference-to-video for motion/style transfer)
+  // Kling 3 Omni Pro reference-to-video for motion/style transfer.
+  // Endpoint requires `video_url` and accepts optional `image_url` start frame.
   if (model.id === "kling-v3-omni-pro") {
-    if (payload.referenceVideoUrl) body.reference_video_url = payload.referenceVideoUrl;
-    if (payload.startImageUrl) body.start_image_url = payload.startImageUrl;
+    if (payload.referenceVideoUrl) body.video_url = payload.referenceVideoUrl;
+    if (payload.startImageUrl) body.image_url = payload.startImageUrl;
     if (payload.prompt) body.prompt = payload.prompt;
     if (payload.negativePrompt) body.negative_prompt = payload.negativePrompt;
     if (payload.duration !== undefined) body.duration = Number(payload.duration);
