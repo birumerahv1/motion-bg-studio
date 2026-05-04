@@ -40,6 +40,14 @@ from telegram.ext import (
     filters,
 )
 
+from bot.billing import (
+    FREE_PERIOD_SECONDS,
+    PLANS,
+    cost_for_generation,
+    evaluate_quota,
+    get_plan,
+    now_ts,
+)
 from bot.config import Config
 from bot.freepik_client import (
     FreepikClient,
@@ -54,6 +62,7 @@ from bot.freepik_models import (
     get_model,
     models_for_mode,
 )
+from bot.handlers._common import operator_keys_for
 from bot.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -173,11 +182,18 @@ async def on_model_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     job.resolution = model.resolution_options[0] if model.resolution_options else None
     job.duration = model.duration_options[0] if model.duration_options else None
 
+    prompt_optional = model.mode == "motion-control"
+    prompt_line = (
+        "Optional: kirim *prompt* sebagai teks, atau /skip "
+        "(motion-control bisa jalan tanpa prompt)."
+        if prompt_optional
+        else "Sekarang kirim *prompt* Anda sebagai pesan teks."
+    )
     note_lines = [
         f"*{model.label}* dipilih.",
         f"_{model.description}_",
         "",
-        "Sekarang kirim *prompt* Anda sebagai pesan teks.",
+        prompt_line,
     ]
     if model.aspect_ratio_options:
         note_lines.append(f"Aspect ratio default: `{job.aspect_ratio}`")
@@ -202,6 +218,26 @@ async def on_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await msg.reply_text("Mulai dari /menu dulu.")
         return ConversationHandler.END
     job.prompt = msg.text.strip()
+    return await _next_after_prompt(update, context)
+
+
+async def on_skip_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """/skip during the prompt step. Only allowed for motion-control models;
+    every other model requires a prompt and we reject the skip."""
+    msg = update.effective_message
+    if msg is None:
+        return AWAITING_PROMPT
+    job = _job(context)
+    model = get_model(job.model_id or "")
+    if model is None:
+        await msg.reply_text("Mulai dari /menu dulu.")
+        return ConversationHandler.END
+    if model.mode != "motion-control":
+        await msg.reply_text(
+            "Mode ini wajib pakai prompt. /skip hanya tersedia untuk Motion Control."
+        )
+        return AWAITING_PROMPT
+    job.prompt = ""
     return await _next_after_prompt(update, context)
 
 
@@ -448,12 +484,76 @@ async def _kick_off_generation(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
 
     storage: Storage = context.application.bot_data["storage"]
-    keys = await storage.list_api_keys(user.id)
-    if not keys:
-        await msg.reply_text(
-            "Belum ada API key Freepik. Kirim /addkey <FPSX...> di chat private "
-            "untuk menambahkan, lalu /menu untuk mulai lagi."
+    config: Config = context.application.bot_data["config"]
+
+    # ---- subscription / quota check ----
+    duration_int: int | None = None
+    if job.duration is not None:
+        try:
+            duration_int = int(str(job.duration).strip().rstrip("s"))
+        except ValueError:
+            duration_int = None
+    cost = cost_for_generation(model.id, duration_int)
+    sub = await storage.get_subscription(user.id)
+    plan = get_plan(sub.plan_id) if sub else None
+    if plan is None:
+        plan = PLANS["free"]
+    now = now_ts()
+    if not plan.paid:
+        # Free tier: video & motion control are paywalled.
+        if model.mode != "text-to-image":
+            await msg.reply_text(
+                f"Mode *{model.mode}* hanya tersedia untuk paket berbayar.\n"
+                "Ketik /buy untuk melihat paket.",
+                parse_mode="Markdown",
+            )
+            _reset_job(context)
+            return ConversationHandler.END
+        used_24h = await storage.count_history_since(
+            user.id, since_ts=now - FREE_PERIOD_SECONDS
         )
+        check = evaluate_quota(
+            plan_id=plan.id,
+            quota_used=used_24h,
+            expires_at=now + FREE_PERIOD_SECONDS,
+            cost=cost,
+            now=now,
+        )
+    else:
+        # sub is guaranteed non-None here because plan.paid implies sub exists.
+        check = evaluate_quota(
+            plan_id=plan.id,
+            quota_used=sub.quota_used if sub else 0,
+            expires_at=sub.expires_at if sub else 0,
+            cost=cost,
+            now=now,
+        )
+    if not check.ok:
+        await msg.reply_text(check.reason or "Quota tidak cukup.", parse_mode="Markdown")
+        _reset_job(context)
+        return ConversationHandler.END
+
+    # ---- key resolution ----
+    keys: list[str] = []
+    key_ids: list[int] = []
+    if config.allow_byo_keys:
+        byo = await storage.list_api_keys(user.id)
+        keys.extend(k.api_key for k in byo)
+        key_ids.extend(k.id for k in byo)
+    op_keys = await operator_keys_for(context)
+    keys.extend(k for k in op_keys if k not in keys)
+
+    if not keys:
+        if config.allow_byo_keys:
+            await msg.reply_text(
+                "Belum ada API key Freepik. /addkey <FPSX...> di chat private, "
+                "atau /buy untuk pakai key operator."
+            )
+        else:
+            await msg.reply_text(
+                "Bot belum di-setup oleh admin (operator key kosong). "
+                "Hubungi admin / coba lagi nanti."
+            )
         _reset_job(context)
         return ConversationHandler.END
 
@@ -482,8 +582,14 @@ async def _kick_off_generation(update: Update, context: ContextTypes.DEFAULT_TYP
         chat_id=msg.chat_id,
         action=ChatAction.TYPING,
     )
+    quota_line = ""
+    if plan.paid:
+        quota_line = (
+            f"\nPlan *{plan.name}* — biaya {cost} credits "
+            f"(sisa setelah ini: {check.remaining})"
+        )
     status_msg = await msg.reply_text(
-        f"⏳ Generating dengan *{model.label}*…\nKetik /stop untuk batalkan.",
+        f"⏳ Generating dengan *{model.label}*…{quota_line}\nKetik /stop untuk batalkan.",
         parse_mode="Markdown",
     )
 
@@ -499,10 +605,11 @@ async def _kick_off_generation(update: Update, context: ContextTypes.DEFAULT_TYP
             user_id=user.id,
             model=model,
             body=body,
-            api_keys=[k.api_key for k in keys],
-            api_key_ids=[k.id for k in keys],
+            api_keys=keys,
+            api_key_ids=key_ids,
             history_id=history_id,
             cancel_event=cancel_event,
+            paid_quota_cost=cost if plan.paid else 0,
         )
     )
     # Conversation is done; the background task drives the rest of the UI.
@@ -541,6 +648,7 @@ async def _run_generation(
     api_key_ids: list[int],
     history_id: int,
     cancel_event: asyncio.Event,
+    paid_quota_cost: int = 0,
 ) -> None:
     storage: Storage = context.application.bot_data["storage"]
     config: Config = context.application.bot_data["config"]
@@ -568,8 +676,16 @@ async def _run_generation(
         )
         return
 
-    if post.api_key_index is not None and 0 <= post.api_key_index < len(api_key_ids):
-        await storage.touch_api_key(user_id, api_key_ids[post.api_key_index])
+    if post.api_key_index is not None and 0 <= post.api_key_index < len(api_keys):
+        used_key = api_keys[post.api_key_index]
+        if post.api_key_index < len(api_key_ids):
+            await storage.touch_api_key(user_id, api_key_ids[post.api_key_index])
+        else:
+            # Operator key — look up by api_key string and touch.
+            for op_row in await storage.list_operator_keys(include_disabled=True):
+                if op_row.api_key == used_key:
+                    await storage.touch_operator_key(op_row.id)
+                    break
 
     task_id = extract_task_id(post.data)
     if not task_id:
@@ -692,6 +808,23 @@ async def _run_generation(
         status="COMPLETED",
         result_url=sent_url,
     )
+    if paid_quota_cost > 0:
+        try:
+            new_used = await storage.increment_quota(user_id, by=paid_quota_cost)
+            sub = await storage.get_subscription(user_id)
+            plan = get_plan(sub.plan_id) if sub else None
+            if plan is not None and plan.paid:
+                remaining = max(0, plan.quota - new_used)
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"Sisa credits: *{remaining}* / {plan.quota} "
+                        f"(plan {plan.name})."
+                    ),
+                    parse_mode="Markdown",
+                )
+        except Exception as exc:
+            logger.warning("quota deduction failed for %s: %s", user_id, exc)
 
 
 # ---------------------------------------------------------------- registration
@@ -709,6 +842,7 @@ def build_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(on_mode_chosen, pattern=r"^mode:"),
             ],
             AWAITING_PROMPT: [
+                CommandHandler("skip", on_skip_prompt),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_prompt),
             ],
             AWAITING_NEGATIVE: [

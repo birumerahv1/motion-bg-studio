@@ -1,4 +1,8 @@
-"""API key management commands.
+"""User-facing API key management (BYO mode only).
+
+When `ALLOW_BYO_KEYS` is disabled (the default in the SaaS / operator-key
+deployment), these commands respond with a polite hint pointing the user
+to /buy. Admins manage the operator keys via /opaddkey instead.
 
 For privacy reasons, /addkey only accepts the key when sent in a private
 1:1 chat with the bot — we do NOT want users pasting their FPSX… token
@@ -13,6 +17,7 @@ from telegram import Update
 from telegram.constants import ChatType
 from telegram.ext import ContextTypes
 
+from bot.config import Config
 from bot.freepik_client import fingerprint_key
 from bot.storage import Storage
 
@@ -22,10 +27,29 @@ def _is_private(update: Update) -> bool:
     return chat is not None and chat.type == ChatType.PRIVATE
 
 
+def _byo_enabled(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    cfg: Config = context.application.bot_data["config"]
+    return cfg.allow_byo_keys
+
+
+async def _byo_disabled_reply(update: Update) -> None:
+    msg = update.effective_message
+    if msg is None:
+        return
+    await msg.reply_text(
+        "Bot ini berjalan dengan operator key (mode SaaS). "
+        "Pilih paket dengan /buy — kamu tidak perlu API key Freepik sendiri.\n"
+        "/plans untuk melihat paket dan harga."
+    )
+
+
 async def cmd_addkey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     user = update.effective_user
     if msg is None or user is None:
+        return
+    if not _byo_enabled(context):
+        await _byo_disabled_reply(update)
         return
     if not _is_private(update):
         await msg.reply_text(
@@ -79,6 +103,9 @@ async def cmd_listkeys(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user = update.effective_user
     if msg is None or user is None:
         return
+    if not _byo_enabled(context):
+        await _byo_disabled_reply(update)
+        return
     storage: Storage = context.application.bot_data["storage"]
     keys = await storage.list_api_keys(user.id)
     if not keys:
@@ -106,6 +133,9 @@ async def cmd_delkey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user = update.effective_user
     if msg is None or user is None:
         return
+    if not _byo_enabled(context):
+        await _byo_disabled_reply(update)
+        return
     args = context.args or []
     if not args:
         await msg.reply_markdown("Format: `/delkey <id>` (lihat id dengan /listkeys)")
@@ -128,6 +158,9 @@ async def cmd_clearkeys(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     msg = update.effective_message
     user = update.effective_user
     if msg is None or user is None:
+        return
+    if not _byo_enabled(context):
+        await _byo_disabled_reply(update)
         return
     storage: Storage = context.application.bot_data["storage"]
     n = await storage.clear_api_keys(user.id)
