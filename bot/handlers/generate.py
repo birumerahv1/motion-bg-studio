@@ -41,11 +41,7 @@ from telegram.ext import (
 )
 
 from bot.billing import (
-    FREE_PERIOD_SECONDS,
-    PLANS,
-    cost_for_generation,
-    evaluate_quota,
-    get_plan,
+    is_subscription_active,
     now_ts,
 )
 from bot.config import Config
@@ -486,52 +482,22 @@ async def _kick_off_generation(update: Update, context: ContextTypes.DEFAULT_TYP
     storage: Storage = context.application.bot_data["storage"]
     config: Config = context.application.bot_data["config"]
 
-    # ---- subscription / quota check ----
-    duration_int: int | None = None
-    if job.duration is not None:
-        try:
-            duration_int = int(str(job.duration).strip().rstrip("s"))
-        except ValueError:
-            duration_int = None
-    cost = cost_for_generation(model.id, duration_int)
+    # ---- subscription check (no quota/credits — just active window) ----
     sub = await storage.get_subscription(user.id)
-    plan = get_plan(sub.plan_id) if sub else None
-    if plan is None:
-        plan = PLANS["free"]
     now = now_ts()
-    if not plan.paid:
-        # Free tier: video & motion control are paywalled.
-        if model.mode != "text-to-image":
-            await msg.reply_text(
-                f"Mode *{model.mode}* hanya tersedia untuk paket berbayar.\n"
-                "Ketik /buy untuk melihat paket.",
-                parse_mode="Markdown",
-            )
-            _reset_job(context)
-            return ConversationHandler.END
-        used_24h = await storage.count_history_since(
-            user.id, since_ts=now - FREE_PERIOD_SECONDS
-        )
-        check = evaluate_quota(
-            plan_id=plan.id,
-            quota_used=used_24h,
-            expires_at=now + FREE_PERIOD_SECONDS,
-            cost=cost,
-            now=now,
-        )
-    else:
-        # sub is guaranteed non-None here because plan.paid implies sub exists.
-        check = evaluate_quota(
-            plan_id=plan.id,
-            quota_used=sub.quota_used if sub else 0,
-            expires_at=sub.expires_at if sub else 0,
-            cost=cost,
-            now=now,
-        )
+    check = is_subscription_active(
+        plan_id=sub.plan_id if sub else None,
+        expires_at=sub.expires_at if sub else 0,
+        now=now,
+    )
     if not check.ok:
-        await msg.reply_text(check.reason or "Quota tidak cukup.", parse_mode="Markdown")
+        await msg.reply_text(
+            check.reason or "Belum ada langganan aktif. Ketik /buy.",
+            parse_mode="Markdown",
+        )
         _reset_job(context)
         return ConversationHandler.END
+    plan = check.plan
 
     # ---- key resolution ----
     keys: list[str] = []
@@ -582,14 +548,9 @@ async def _kick_off_generation(update: Update, context: ContextTypes.DEFAULT_TYP
         chat_id=msg.chat_id,
         action=ChatAction.TYPING,
     )
-    quota_line = ""
-    if plan.paid:
-        quota_line = (
-            f"\nPlan *{plan.name}* — biaya {cost} credits "
-            f"(sisa setelah ini: {check.remaining})"
-        )
+    plan_line = f"\nPlan: *{plan.name}*" if plan is not None else ""
     status_msg = await msg.reply_text(
-        f"⏳ Generating dengan *{model.label}*…{quota_line}\nKetik /stop untuk batalkan.",
+        f"⏳ Generating dengan *{model.label}*…{plan_line}\nKetik /stop untuk batalkan.",
         parse_mode="Markdown",
     )
 
@@ -609,7 +570,6 @@ async def _kick_off_generation(update: Update, context: ContextTypes.DEFAULT_TYP
             api_key_ids=key_ids,
             history_id=history_id,
             cancel_event=cancel_event,
-            paid_quota_cost=cost if plan.paid else 0,
         )
     )
     # Conversation is done; the background task drives the rest of the UI.
@@ -648,7 +608,6 @@ async def _run_generation(
     api_key_ids: list[int],
     history_id: int,
     cancel_event: asyncio.Event,
-    paid_quota_cost: int = 0,
 ) -> None:
     storage: Storage = context.application.bot_data["storage"]
     config: Config = context.application.bot_data["config"]
@@ -808,23 +767,6 @@ async def _run_generation(
         status="COMPLETED",
         result_url=sent_url,
     )
-    if paid_quota_cost > 0:
-        try:
-            new_used = await storage.increment_quota(user_id, by=paid_quota_cost)
-            sub = await storage.get_subscription(user_id)
-            plan = get_plan(sub.plan_id) if sub else None
-            if plan is not None and plan.paid:
-                remaining = max(0, plan.quota - new_used)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=(
-                        f"Sisa credits: *{remaining}* / {plan.quota} "
-                        f"(plan {plan.name})."
-                    ),
-                    parse_mode="Markdown",
-                )
-        except Exception as exc:
-            logger.warning("quota deduction failed for %s: %s", user_id, exc)
 
 
 # ---------------------------------------------------------------- registration

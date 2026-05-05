@@ -18,14 +18,12 @@ Bot mendukung dua mode (di-toggle via env `ALLOW_BYO_KEYS`):
 
 ## Plan default (edit di `bot/billing.py`)
 
-| Plan | Harga | Quota | Catatan |
+| Plan | Harga | Durasi | Akses |
 |---|---|---|---|
-| Free | gratis | 3 image / 24 jam | text-to-image saja, video & motion control terkunci |
-| Basic | Rp 49.000 / bulan | 100 credits | semua mode |
-| Pro | Rp 149.000 / bulan | 500 credits | semua mode |
-| Unlimited | Rp 499.000 / bulan | 5.000 credits | semua mode |
+| **Bulanan** | Rp 49.999 | 30 hari | Unlimited semua model |
+| **Lifetime** | Rp 499.999 | selamanya (sekali bayar) | Unlimited semua model |
 
-Cost per generasi: image **1 credit**, video ≤5s **3 credits**, video >5s **5 credits**, motion control **4 credits**.
+Tidak ada quota / credits — pakai sepuasnya selama langganan aktif. Edit `bot/billing.py` untuk ganti harga atau menambah paket.
 
 ## Quick start
 

@@ -16,7 +16,6 @@ from telegram.ext import (
 )
 
 from ..billing import (
-    PLANS,
     format_idr,
     get_plan,
     humanize_seconds_until,
@@ -31,11 +30,11 @@ log = logging.getLogger(__name__)
 
 def _plan_pick_keyboard() -> InlineKeyboardMarkup:
     rows = []
-    for plan in sorted(paid_plans(), key=lambda p: p.sort):
+    for plan in paid_plans():
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{plan.name} • {format_idr(plan.price_idr)} • {plan.quota} credits",
+                    f"{plan.name} • {plan.price_label}",
                     callback_data=f"buy:plan:{plan.id}",
                 )
             ]
@@ -52,12 +51,13 @@ async def cmd_buy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if msg is None:
         return
     lines = ["💳 *Pilih paket langganan:*", ""]
-    for plan in sorted(paid_plans(), key=lambda p: p.sort):
-        lines.append(f"*{plan.name}* — {format_idr(plan.price_idr)} / bulan")
-        lines.append(f"  • {plan.quota} credits / bulan")
+    for plan in paid_plans():
+        lines.append(f"*{plan.name}* — {plan.price_label}")
+        lines.append("  • Akses unlimited semua model")
+        lines.append(f"  • Durasi: {plan.period_label}")
         lines.append(f"  • {plan.description}")
         lines.append("")
-    lines.append("_Cost rata-rata:_ image 1 credit • video pendek 3 credits • video panjang 5 credits • motion control 4 credits.")
+    lines.append("_Tidak ada quota / credits — pakai sepuasnya selama langganan aktif._")
     await msg.reply_text(
         "\n".join(lines), parse_mode="Markdown", reply_markup=_plan_pick_keyboard()
     )
@@ -241,40 +241,32 @@ async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     now = now_ts()
     lines = [f"👤 *{user.first_name or 'You'}* (`{user.id}`)"]
     if sub is None:
-        free = PLANS["free"]
-        used = await storage.count_history_since(user.id, since_ts=now - free.period_seconds)
-        remaining = max(0, free.quota - used)
         lines.append(
-            f"Plan: *{free.name}* (default)\n"
-            f"Quota: {used} / {free.quota} digunakan dalam 24 jam terakhir "
-            f"(sisa {remaining})"
+            "Belum ada langganan aktif.\n"
+            "Ketik /buy untuk pilih paket — *Bulanan Rp 49.999* atau "
+            "*Lifetime Rp 499.999* (bayar sekali, akses selamanya)."
         )
-        lines.append("\nKetik /buy untuk upgrade ke paket berbayar.")
     else:
-        plan = get_plan(sub.plan_id) or PLANS["free"]
-        if plan.paid:
+        plan = get_plan(sub.plan_id)
+        plan_name = plan.name if plan else sub.plan_id
+        if sub.expires_at <= now:
             lines.append(
-                f"Plan: *{plan.name}* — aktif sampai "
-                f"`{time.strftime('%Y-%m-%d %H:%M', time.localtime(sub.expires_at))}` "
-                f"({humanize_seconds_until(sub.expires_at, now=now)})"
+                f"Plan: *{plan_name}* — ⚠️ sudah habis "
+                f"(`{time.strftime('%Y-%m-%d %H:%M', time.localtime(sub.expires_at))}`).\n"
+                "Perpanjang dengan /buy."
             )
+        elif plan and plan.lifetime:
             lines.append(
-                f"Quota: *{sub.quota_used} / {plan.quota}* credits digunakan "
-                f"(sisa {max(0, plan.quota - sub.quota_used)})"
+                f"Plan: *{plan_name}* — aktif *selamanya* ✨\n"
+                "Akses unlimited semua model."
             )
-            if sub.expires_at <= now:
-                lines.append("\n⚠️ Subscription sudah habis. /buy untuk perpanjang.")
         else:
-            used = await storage.count_history_since(
-                user.id, since_ts=now - plan.period_seconds
-            )
-            remaining = max(0, plan.quota - used)
             lines.append(
-                f"Plan: *{plan.name}*\n"
-                f"Quota: {used} / {plan.quota} dalam 24 jam terakhir "
-                f"(sisa {remaining})"
+                f"Plan: *{plan_name}* — aktif sampai "
+                f"`{time.strftime('%Y-%m-%d %H:%M', time.localtime(sub.expires_at))}` "
+                f"({humanize_seconds_until(sub.expires_at, now=now)})\n"
+                "Akses unlimited semua model."
             )
-            lines.append("\nKetik /buy untuk upgrade.")
 
     if await is_admin(context, user.id):
         lines.append("\n🛠 _kamu admin_ — `/admin` untuk dashboard")
@@ -290,17 +282,13 @@ async def cmd_plans(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if msg is None:
         return
     lines = ["💎 *Daftar Paket*", ""]
-    for p in sorted(PLANS.values(), key=lambda x: x.sort):
-        lines.append(
-            f"*{p.name}* • {format_idr(p.price_idr) if p.price_idr else 'Gratis'}"
-        )
-        lines.append(
-            f"  • Quota: {p.quota} credits / "
-            f"{'24 jam' if p.period_seconds <= 86400 else 'bulan'}"
-        )
+    for p in paid_plans():
+        lines.append(f"*{p.name}* — {p.price_label}")
+        lines.append(f"  • Durasi: {p.period_label}")
         lines.append(f"  • {p.description}")
         lines.append("")
-    lines.append("Pilih dengan /buy.")
+    lines.append("_Akses unlimited semua model selama langganan aktif. Tidak ada quota._")
+    lines.append("\nPilih dengan /buy.")
     await msg.reply_text("\n".join(lines), parse_mode="Markdown")
 
 

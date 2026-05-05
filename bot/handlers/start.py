@@ -35,7 +35,7 @@ def _welcome_text(byo_enabled: bool) -> str:
         + "\n*Subscription:*\n"
         "/plans — daftar paket & harga\n"
         "/buy — beli paket (manual QRIS / transfer)\n"
-        "/me — status langganan & sisa quota\n"
+        "/me — status langganan kamu\n"
         "/paid <ref> — kirim bukti transfer untuk verifikasi admin\n\n"
         "*Lainnya:*\n"
         "/history — 10 generasi terakhir\n"

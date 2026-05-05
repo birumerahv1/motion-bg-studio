@@ -10,11 +10,11 @@ from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
 
 from ..billing import (
-    PLANS,
     format_idr,
     get_plan,
     humanize_seconds_until,
     now_ts,
+    paid_plans,
 )
 from ..freepik_client import fingerprint_key
 from ..storage import Payment
@@ -119,6 +119,11 @@ def _parse_payment_id(args: list[str]) -> int | None:
         return None
 
 
+def _plan_name(plan_id: str) -> str:
+    plan = get_plan(plan_id)
+    return plan.name if plan else plan_id
+
+
 async def _activate_subscription(
     context: ContextTypes.DEFAULT_TYPE,
     payment: Payment,
@@ -132,22 +137,23 @@ async def _activate_subscription(
     # Extend if same plan & still active, else replace.
     if sub and sub.plan_id == plan.id and sub.expires_at > now:
         new_expires = sub.expires_at + plan.period_seconds
-        new_used = sub.quota_used  # do not reset on extension
     else:
         new_expires = now + plan.period_seconds
-        new_used = 0
     await storage.upsert_subscription(
         user_id=payment.user_id,
         plan_id=plan.id,
         started_at=now,
         expires_at=new_expires,
-        quota_used=new_used,
+        quota_used=0,
     )
-    return True, (
-        f"Plan *{plan.name}* aktif sampai "
-        f"`{time.strftime('%Y-%m-%d %H:%M', time.localtime(new_expires))}` "
-        f"({humanize_seconds_until(new_expires, now=now)})."
-    )
+    if plan.lifetime:
+        when = "*selamanya* ✨"
+    else:
+        when = (
+            f"sampai `{time.strftime('%Y-%m-%d %H:%M', time.localtime(new_expires))}` "
+            f"({humanize_seconds_until(new_expires, now=now)})"
+        )
+    return True, f"Plan *{plan.name}* aktif {when}."
 
 
 async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -181,7 +187,7 @@ async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await context.bot.send_message(
             chat_id=payment.user_id,
             text=(
-                f"✅ Pembayaran kamu untuk *{(get_plan(payment.plan_id) or PLANS['free']).name}* "
+                f"✅ Pembayaran kamu untuk *{_plan_name(payment.plan_id)}* "
                 f"sudah disetujui.\n{info}\nKetik /menu untuk mulai generate."
             ),
             parse_mode="Markdown",
@@ -277,7 +283,7 @@ async def on_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await context.bot.send_message(
                 chat_id=payment.user_id,
                 text=(
-                    f"✅ Pembayaran kamu untuk *{(get_plan(payment.plan_id) or PLANS['free']).name}* "
+                    f"✅ Pembayaran kamu untuk *{_plan_name(payment.plan_id)}* "
                     f"sudah disetujui.\n{info}\nKetik /menu untuk mulai generate."
                 ),
                 parse_mode="Markdown",
@@ -537,7 +543,7 @@ async def cmd_setplan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if len(args) < 2:
         await msg.reply_text(
             "Pakai: `/setplan <user_id> <plan_id> [days]`\n"
-            f"Plan ids: {', '.join(PLANS.keys())}",
+            f"Plan ids: {', '.join(p.id for p in paid_plans())}",
             parse_mode="Markdown",
         )
         return
